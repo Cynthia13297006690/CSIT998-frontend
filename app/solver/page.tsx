@@ -1,283 +1,124 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useSearchParams } from "next/navigation"
+import { useState, useRef, ChangeEvent } from "react"
 import Link from "next/link"
-import { ArrowLeft, Upload, Lightbulb, Eye, ChevronRight, FileImage } from "lucide-react"
+import { ArrowLeft, Lightbulb, FileImage, Loader2, ChevronRight, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import 'katex/dist/katex.min.css'
+import { BlockMath } from 'react-katex'
+
+interface Step {
+  title: string;
+  equation: string;
+  description: string;
+}
 
 export default function SolverPage() {
-  const searchParams = useSearchParams()
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const [showSteps, setShowSteps] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
-  const [problemQuestion, setProblemQuestion] = useState("")
-  const [problemContext, setProblemContext] = useState("")
+  const [steps, setSteps] = useState<Step[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    const question = searchParams.get("question")
-    const context = searchParams.get("context")
-
-    if (question) {
-      setProblemQuestion(decodeURIComponent(question))
-      setShowSteps(true)
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0]
+    if (selectedFile) {
+      setFile(selectedFile)
+      setPreview(URL.createObjectURL(selectedFile))
+      setShowSteps(false)
     }
+  }
 
-    if (context) {
-      setProblemContext(decodeURIComponent(context))
+  const handleStartSolving = async () => {
+    if (!file) return;
+    setLoading(true);
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      const imageBase64 = await base64Promise;
+  
+      const response = await fetch('/solver/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: 1, imageBase64 })
+      });
+  
+      const data = await response.json();
+      if (data.success) {
+        setSteps(data.steps);
+        setShowSteps(true);
+        setCurrentStep(0);
+      } else {
+        alert("推理失败: " + data.error);
+      }
+    } catch (error) {
+      console.error("连接异常", error);
+      alert("服务器连接失败，请检查终端 3002 端口是否正常。");
+    } finally {
+      setLoading(false);
     }
-  }, [searchParams])
-
-  const steps = [
-    {
-      title: "Identify the equation structure",
-      content: "This is a quadratic equation in standard form: $$ax^2 + bx + c = 0$$",
-      explanation: "We have $$a = 2$$, $$b = -8$$, and $$c = 6$$",
-    },
-    {
-      title: "Apply the quadratic formula",
-      content: "Use: $$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$",
-      explanation: "This formula works for all quadratic equations",
-    },
-    {
-      title: "Calculate the discriminant",
-      content: "$$b^2 - 4ac = (-8)^2 - 4(2)(6) = 64 - 48 = 16$$",
-      explanation: "A positive discriminant means two real solutions",
-    },
-    {
-      title: "Solve for x",
-      content: "$$x = \\frac{8 \\pm \\sqrt{16}}{4} = \\frac{8 \\pm 4}{4}$$",
-      explanation: "This gives us $$x = 3$$ or $$x = 1$$",
-    },
-  ]
+  };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border/40 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/">
-                <Button variant="ghost" size="sm" className="gap-2">
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </Button>
-              </Link>
-              <div className="h-6 w-px bg-border" />
-              <h1 className="text-xl font-semibold text-foreground">Smart Solver</h1>
-            </div>
+    <div className="min-h-screen bg-[#F9FAFB] text-[#111827]">
+      <header className="border-b bg-white sticky top-0 z-10">
+        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link href="/"><Button variant="ghost" size="sm"><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button></Link>
+            <h1 className="text-lg font-bold">Smart Solver</h1>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-6 py-12">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-8">
-            {/* Left Side - Problem Input */}
-            <div className="space-y-6">
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold text-foreground">Upload Your Problem</h2>
-                <p className="text-muted-foreground leading-relaxed">
-                  Upload an image of your problem or type it directly below
-                </p>
-              </div>
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12">
+          {/* 上传区 */}
+          <div className="space-y-8">
+            <h2 className="text-3xl font-black tracking-tight">Upload Your Problem</h2>
+            <Card className={`border-2 border-dashed ${preview ? 'border-blue-500' : 'border-gray-200'}`} onClick={() => fileInputRef.current?.click()}>
+              <CardContent className="p-0 flex items-center justify-center min-h-[400px]">
+                <input type="file" hidden ref={fileInputRef} onChange={handleFileChange} accept="image/*" />
+                {preview ? <img src={preview} className="max-h-80 rounded-xl" /> : <div className="text-center opacity-40"><FileImage className="h-12 w-12 mx-auto" /><p>Click to upload image</p></div>}
+              </CardContent>
+            </Card>
+            <Button onClick={handleStartSolving} className="w-full h-16 text-xl bg-blue-600 font-bold" disabled={loading || !preview}>
+              {loading ? <Loader2 className="animate-spin mr-2" /> : <Lightbulb className="mr-2" />} Start Solving
+            </Button>
+          </div>
 
-              {/* Upload Area */}
-              <Card className="border-2 border-dashed border-border/50 bg-muted/20 hover:border-primary/50 transition-colors">
-                <CardContent className="p-12">
-                  <div className="flex flex-col items-center justify-center gap-4 text-center">
-                    <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-                      <FileImage className="h-8 w-8 text-primary" />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Drop your image here</p>
-                      <p className="text-xs text-muted-foreground">or click to browse</p>
-                    </div>
-                    <Button size="sm" className="gap-2">
-                      <Upload className="h-4 w-4" />
-                      Choose File
-                    </Button>
+          {/* 展示区 */}
+          <div className="space-y-8">
+            <h2 className="text-3xl font-black tracking-tight">Solution Workspace</h2>
+            {!showSteps ? (
+              <Card className="h-[500px] flex items-center justify-center opacity-20"><Lightbulb className="h-20 w-20" /></Card>
+            ) : (
+              <div className="space-y-6">
+                <Card className="shadow-2xl rounded-3xl overflow-hidden border-none">
+                  <div className="bg-blue-600 p-8 text-white">
+                    <p className="text-xs uppercase opacity-70">Step {currentStep + 1} of {steps.length}</p>
+                    <h3 className="text-2xl font-bold">{steps[currentStep].title}</h3>
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* Sample Problem Display */}
-              <Card className="border-border/50 bg-card">
-                <CardContent className="p-8">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-foreground">Sample Problem</h3>
-                      <Button variant="ghost" size="sm" className="gap-2">
-                        <Eye className="h-4 w-4" />
-                        View Original
+                  <CardContent className="p-10 space-y-8">
+                    <div className="bg-gray-50 py-10 rounded-2xl flex justify-center text-2xl">
+                      <BlockMath math={steps[currentStep].equation} />
+                    </div>
+                    <p className="p-6 bg-blue-50 rounded-xl italic text-gray-700">{steps[currentStep].description}</p>
+                    <div className="flex gap-4">
+                      <Button variant="outline" className="flex-1" onClick={() => setCurrentStep(s => Math.max(0, s - 1))} disabled={currentStep === 0}>Previous</Button>
+                      <Button className="flex-1 bg-black text-white" onClick={() => currentStep < steps.length - 1 && setCurrentStep(s => s + 1)}>
+                        {currentStep === steps.length - 1 ? "Complete" : "Next Step"}
                       </Button>
-                    </div>
-                    <div className="bg-muted/30 rounded-xl p-6 text-center">
-                      <p className="text-xl text-foreground font-medium">Solve for x:</p>
-                      <p className="text-2xl font-bold text-foreground mt-2">$$2x^2 - 8x + 6 = 0$$</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <Button
-                  onClick={() => {
-                    setShowSteps(true)
-                    setCurrentStep(0)
-                  }}
-                  className="flex-1 gap-2"
-                  disabled={showSteps}
-                >
-                  <Lightbulb className="h-4 w-4" />
-                  Start Solving
-                </Button>
-                <Button variant="outline" className="gap-2 bg-transparent">
-                  Ask for a Hint
-                </Button>
-              </div>
-            </div>
-
-            {/* Right Side - Solution Workspace */}
-            <div className="space-y-6">
-              <div className="space-y-4">
-                <h2 className="text-2xl font-bold text-foreground">Solution Workspace</h2>
-                <p className="text-muted-foreground leading-relaxed">
-                  Follow along as we illuminate the path to the answer
-                </p>
-              </div>
-
-              {!showSteps ? (
-                <Card className="border-border/50 bg-muted/20">
-                  <CardContent className="p-12">
-                    <div className="flex flex-col items-center justify-center text-center gap-4">
-                      <div className="h-16 w-16 rounded-2xl bg-secondary/10 flex items-center justify-center">
-                        <Lightbulb className="h-8 w-8 text-secondary" />
-                      </div>
-                      <div className="space-y-2">
-                        <p className="font-medium text-foreground">Ready to solve?</p>
-                        <p className="text-sm text-muted-foreground">
-                          Click "Start Solving" to see step-by-step guidance
-                        </p>
-                      </div>
                     </div>
                   </CardContent>
                 </Card>
-              ) : (
-                <div className="space-y-4">
-                  {/* Progress Indicator */}
-                  <div className="flex items-center gap-2">
-                    {steps.map((_, index) => (
-                      <div
-                        key={index}
-                        className={`h-1.5 flex-1 rounded-full transition-colors ${
-                          index <= currentStep ? "bg-primary" : "bg-muted"
-                        }`}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Current Step */}
-                  <Card className="border-border/50 bg-card shadow-lg">
-                    <CardContent className="p-8">
-                      <div className="space-y-6">
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">
-                                {currentStep + 1}
-                              </div>
-                              <h3 className="text-xl font-semibold text-foreground">{steps[currentStep].title}</h3>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-4">
-                          <div className="bg-muted/30 rounded-xl p-6 text-center">
-                            <p className="text-lg text-foreground">{steps[currentStep].content}</p>
-                          </div>
-
-                          <div className="bg-accent/5 border border-accent/20 rounded-xl p-4">
-                            <p className="text-sm text-muted-foreground leading-relaxed">
-                              <span className="font-medium text-accent">Deep Dive:</span>{" "}
-                              {steps[currentStep].explanation}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-3 pt-4">
-                          <Button
-                            variant="outline"
-                            onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-                            disabled={currentStep === 0}
-                            className="bg-transparent"
-                          >
-                            Previous
-                          </Button>
-                          {currentStep < steps.length - 1 ? (
-                            <Button onClick={() => setCurrentStep(currentStep + 1)} className="flex-1 gap-2">
-                              Next Step
-                              <ChevronRight className="h-4 w-4" />
-                            </Button>
-                          ) : (
-                            <Button className="flex-1" variant="secondary">
-                              Solution Complete
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* Tabs for Additional Context */}
-                  <Tabs defaultValue="similar" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="similar">Similar Problems</TabsTrigger>
-                      <TabsTrigger value="concepts">Key Concepts</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="similar" className="mt-4">
-                      <Card className="border-border/50 bg-card">
-                        <CardContent className="p-6">
-                          <div className="space-y-3">
-                            <p className="text-sm text-muted-foreground">Try these related problems:</p>
-                            <div className="space-y-2">
-                              <div className="p-3 bg-muted/20 rounded-lg text-sm text-foreground hover:bg-muted/40 transition-colors cursor-pointer">
-                                $$3x^2 - 12x + 9 = 0$$
-                              </div>
-                              <div className="p-3 bg-muted/20 rounded-lg text-sm text-foreground hover:bg-muted/40 transition-colors cursor-pointer">
-                                $$x^2 - 5x + 6 = 0$$
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-                    <TabsContent value="concepts" className="mt-4">
-                      <Card className="border-border/50 bg-card">
-                        <CardContent className="p-6">
-                          <div className="space-y-3">
-                            <p className="text-sm font-medium text-foreground">Related concepts:</p>
-                            <div className="flex flex-wrap gap-2">
-                              <span className="px-3 py-1 bg-primary/10 text-primary text-sm rounded-full">
-                                Quadratic Formula
-                              </span>
-                              <span className="px-3 py-1 bg-secondary/10 text-secondary text-sm rounded-full">
-                                Discriminant
-                              </span>
-                              <span className="px-3 py-1 bg-accent/10 text-accent text-sm rounded-full">Factoring</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-                  </Tabs>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </main>
